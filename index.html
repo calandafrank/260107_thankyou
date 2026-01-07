@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>凝聚｜線上預約表單</title>
+
+  <!-- LIFF SDK：僅在 LINE 內會用到，但載入不影響其他環境 -->
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
+  <style>
+    :root{
+      --bg:#f8fafc; --card:#ffffff; --text:#0f172a; --muted:#64748b;
+      --border:#e2e8f0; --shadow: 0 10px 30px rgba(2,6,23,.12);
+      --overlay: rgba(2,6,23,.62);
+      --btn:#0ea5e9; --btnText:#fff;
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0; font-family: system-ui, -apple-system, "Segoe UI", Arial, "Noto Sans TC", sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; display:flex; flex-direction:column;
+    }
+    header{
+      padding:16px 18px 10px; text-align:center;
+    }
+    header h1{ margin:0 0 6px; font-size:18px; font-weight:700; }
+    header p{ margin:0; color:var(--muted); font-size:13px; }
+    .wrap{
+      width:100%; max-width: 980px; margin: 0 auto; padding: 10px 14px 22px;
+      flex: 1; display:flex; flex-direction:column; gap:10px;
+    }
+    .frameCard{
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 6px 22px rgba(2,6,23,.08);
+      overflow:hidden;
+      flex: 1;
+    }
+    iframe{
+      width:100%;
+      height: calc(100vh - 120px);
+      border:0;
+      display:block;
+      background:#fff;
+    }
+    .tinybar{
+      display:flex; justify-content:flex-end; gap:10px;
+      font-size: 12px; color: var(--muted);
+    }
+    .btn{
+      border: 1px solid var(--border);
+      background: #fff;
+      padding: 10px 12px;
+      border-radius: 10px;
+      cursor:pointer;
+      font-size: 13px;
+    }
+    .btn-primary{
+      background: var(--btn);
+      color: var(--btnText);
+      border-color: var(--btn);
+    }
+
+    /* Modal */
+    .modal{
+      position:fixed; inset:0;
+      display:none; place-items:center;
+      background: var(--overlay);
+      z-index: 9999;
+      padding: 18px;
+    }
+    .modal.show{ display:grid; }
+    .modalCard{
+      width:min(92vw, 520px);
+      background: var(--card);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 18px 18px 16px;
+      animation: pop .18s ease-out;
+    }
+    @keyframes pop { from{ transform: translateY(8px) scale(.985); opacity:.6 } to{ transform:none; opacity:1 } }
+    .modalCard h2{ margin:0 0 8px; font-size: 18px; }
+    .modalCard p{ margin:0 0 12px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+    .qrWrap{ display:flex; justify-content:center; margin: 10px 0 10px; }
+    .qrWrap img{
+      width: 240px; height: 240px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background:#fff;
+    }
+    .hint{
+      text-align:center;
+      font-size: 12px;
+      color: var(--muted);
+      margin: 0 0 12px;
+    }
+    .actions{
+      display:flex; gap:10px; justify-content:center; flex-wrap:wrap;
+    }
+    .actions a{ text-decoration:none; display:inline-block; text-align:center; }
+  </style>
+</head>
+
+<body>
+    <div class="frameCard">
+      <iframe id="filloutFrame" title="Fillout 表單"></iframe>
+    </div>
+  </div>
+
+  <!-- QR Modal -->
+  <div id="qrModal" class="modal" role="dialog" aria-modal="true">
+    <div class="modalCard">
+      <h2>請用手機掃碼或外部瀏覽器開啟</h2>
+      <p>
+        你可以：
+        <br>① 用手機掃 QR  code 開啟，或
+        <br>② 點右上／右下 ⋮ 「外部瀏覽器開啟」
+      </p>
+
+      <div class="qrWrap">
+        <img id="qrImage" alt="掃描 QR Code 開啟" />
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /***********************
+     * ✅ 你需要改的只有這兩個
+     ***********************/
+    const LIFF_ID = "2001467446-5e8NpLdt"; // ← 換成你的 LIFF ID
+    const FILL_OUT_BASE_URL = "https://cicostudio.fillout.com/t/6daWfoG9sJus"; // ← 你的 Fillout 表單 base URL（不含 query）
+
+    /***********************
+     * 工具函式：環境偵測
+     ***********************/
+    const ua = navigator.userAgent || "";
+    const isLINEUA  = /line\//i.test(ua);                 // LINE 內建瀏覽器（LIFF）
+    const isMobile  = /Mobi|Android|iPhone|iPad|iPod/i.test(ua);
+    const isFBIGWebView = /(FBAN|FBAV|Instagram)/i.test(ua); // 參考：IG/FB WebView 常見 UA
+
+    /***********************
+     * DOM
+     ***********************/
+    const els = {
+      frame: document.getElementById("filloutFrame"),
+      modal: document.getElementById("qrModal"),
+      qrImg: document.getElementById("qrImage"),
+      btnShow: document.getElementById("btnShowModal"),
+      btnClose: document.getElementById("btnCloseModal"),
+      btnReload: document.getElementById("btnReload"),
+      btnOpenSameUrl: document.getElementById("btnOpenSameUrl")
+    };
+
+    /***********************
+     * 建立 Fillout iframe src（不整頁跳轉）
+     ***********************/
+    function setFrameSrc(paramsObj) {
+      const url = new URL(FILL_OUT_BASE_URL);
+      // 保留目前頁面的 query（例如你想帶 utm 或其他參數）
+      const cur = new URL(window.location.href);
+      cur.searchParams.forEach((v, k) => {
+        // 避免把 submitted 等控制參數帶進表單造成污染（可自行增減）
+        if (k === "submitted") return;
+        // 若 Fillout 也需要這些參數，可保留；不需要就移除這段
+        if (!url.searchParams.has(k)) url.searchParams.set(k, v);
+      });
+
+      if (paramsObj && typeof paramsObj === "object") {
+        Object.entries(paramsObj).forEach(([k, v]) => {
+          if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
+        });
+      }
+
+      // 可加來源辨識，方便你在 Fillout/Sheets 端分析
+      if (!url.searchParams.has("utm_source")) {
+        url.searchParams.set("utm_source", isLINEUA ? "line_liff" : (isFBIGWebView ? "igfb_webview" : "web"));
+      }
+
+      els.frame.src = url.toString();
+    }
+
+    /***********************
+     * QR Modal：顯示/關閉（關閉後本次瀏覽不再自動彈）
+     ***********************/
+    function showModal() {
+      const sameUrl = window.location.href;
+      els.qrImg.src = "https://api.qrserver.com/v1/create-qr-code/?data=" + encodeURIComponent(sameUrl) + "&size=240x240";
+      els.btnOpenSameUrl.href = sameUrl; // 讓使用者可自行「外部瀏覽器」打開（實際是否外開取決於系統/APP）
+      els.modal.classList.add("show");
+    }
+    function hideModal() {
+      els.modal.classList.remove("show");
+      sessionStorage.setItem("qr_modal_dismissed", "1");
+    }
+
+    els.btnShow.addEventListener("click", showModal);
+    els.btnClose.addEventListener("click", hideModal);
+    els.modal.addEventListener("click", (e) => { if (e.target === els.modal) hideModal(); });
+    els.btnReload.addEventListener("click", () => { els.frame.src = els.frame.src; });
+
+    /***********************
+     * 主流程
+     * 1) 先讓所有環境都「可立即填寫」：先載入不含 userid 的表單
+     * 2) 桌面/手機非 LINE：自動彈 QR（可關閉，關閉後本次不再彈）
+     * 3) 手機 LINE：LIFF init 取 userId，僅更新 iframe src（不整頁跳）
+     ***********************/
+    (async function bootstrap() {
+      // ✅ 永遠先給基本表單（避免空白/卡住）
+      setFrameSrc({});
+
+      // ✅ 條件 2：桌面端或手機非 LINE → 自動彈出可關閉 QR 燈箱（本次可關閉後不再彈）
+      if (!isLINEUA) {
+        const dismissed = sessionStorage.getItem("qr_modal_dismissed") === "1";
+        if (!dismissed) showModal();
+        return; // 非 LINE 環境就到此為止，不跑 LIFF
+      }
+
+      // ✅ 條件 1：手機 LINE App 開啟 → 初始化拿 userId → 只換 iframe src（不整頁跳）
+      try {
+        await liff.init({ liffId: LIFF_ID });
+        const profile = await liff.getProfile();
+        const userId = profile.userId;
+
+        // 只更新 iframe 的 src（含 userid）
+        setFrameSrc({ userid: userId });
+
+      } catch (err) {
+        // 失敗也不阻斷：使用者仍可直接填基本表單
+        console.error("LIFF init/getProfile 失敗：", err);
+      }
+    })();
+  </script>
+</body>
+</html>
