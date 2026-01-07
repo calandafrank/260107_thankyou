@@ -19,35 +19,40 @@
       padding:16px;
       text-align:center;
     }
-    header h1{
-      margin:0 0 6px;
-      font-size:18px;
-    }
-    header p{
-      margin:0;
-      font-size:13px;
-      color:#64748b;
-    }
+    header h1{ margin:0 0 6px; font-size:18px; }
+    header p{ margin:0; font-size:13px; color:#64748b; }
+
     .frame-wrap{
       margin:0 auto;
       max-width:980px;
       padding:0 12px 24px;
     }
+
+    /* 預載入狀態（只在 LINE 內取 userId 時顯示一下） */
+    .loading{
+      background:#fff;
+      border-radius:12px;
+      border:1px solid #e5e7eb;
+      padding:18px;
+      color:#475569;
+      font-size:14px;
+      text-align:center;
+    }
+
     iframe{
       width:100%;
       height:calc(100vh - 120px);
       border:0;
       background:#fff;
       border-radius:12px;
+      display:none; /* 等環境判斷後再顯示 */
     }
 
     /* QR Modal */
     .modal{
-      position:fixed;
-      inset:0;
+      position:fixed; inset:0;
       background:rgba(0,0,0,.6);
-      display:none;
-      place-items:center;
+      display:none; place-items:center;
       z-index:9999;
       padding:16px;
     }
@@ -60,10 +65,7 @@
       width:100%;
       text-align:center;
     }
-    .modal-card h2{
-      margin:0 0 8px;
-      font-size:18px;
-    }
+    .modal-card h2{ margin:0 0 8px; font-size:18px; }
     .modal-card p{
       margin:0 0 14px;
       font-size:14px;
@@ -71,10 +73,10 @@
       line-height:1.5;
     }
     .modal-card img{
-      width:240px;
-      height:240px;
+      width:240px; height:240px;
       border:1px solid #e5e7eb;
       border-radius:10px;
+      background:#fff;
     }
     .close-btn{
       margin-top:16px;
@@ -94,24 +96,25 @@
 </header>
 
 <div class="frame-wrap">
-  <iframe id="filloutFrame"></iframe>
+  <div id="loadingBox" class="loading" style="display:none;">
+    載入中…
+  </div>
+  <iframe id="filloutFrame" title="Fillout 表單"></iframe>
 </div>
 
 <!-- QR 提示燈箱 -->
-<div id="qrModal" class="modal">
+<div id="qrModal" class="modal" role="dialog" aria-modal="true">
   <div class="modal-card">
     <h2>請使用手機 LINE 開啟</h2>
     <p>
-      若你是從電腦開啟，<br>
-      請用手機掃描 QR Code填寫；<br><br>
-      如使用 IG／FB 內建瀏覽器，<br>
+      若使用【電腦】開啟，<br>
+      請改用手機掃描 QR Code 填寫；<br><br>
+      如使用【IG／FB 內建瀏覽器】，<br>
       請點右上／右下 ⋮ 「外部瀏覽器開啟」。
     </p>
     <img id="qrImage" alt="QR Code">
     <br>
-    <button id="closeModal" class="close-btn">
-      直接填寫
-    </button>
+    <button id="closeModal" class="close-btn">關閉提示</button>
   </div>
 </div>
 
@@ -125,21 +128,30 @@
   const isLINE = /line\//i.test(ua);
 
   const frame = document.getElementById("filloutFrame");
+  const loadingBox = document.getElementById("loadingBox");
+
   const modal = document.getElementById("qrModal");
   const qrImg = document.getElementById("qrImage");
   const closeModalBtn = document.getElementById("closeModal");
 
-  function setFormSrc(extraParams = {}) {
+  function buildFormUrl(params = {}) {
     const url = new URL(FILL_OUT_BASE_URL);
-    Object.entries(extraParams).forEach(([k,v])=>{
-      if(v) url.searchParams.set(k,v);
+    Object.entries(params).forEach(([k,v])=>{
+      if(v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
     });
-    frame.src = url.toString();
+    return url.toString();
+  }
+
+  function mountIframe(src) {
+    frame.src = src;
+    frame.style.display = "block";
+    loadingBox.style.display = "none";
   }
 
   function showQRModal(){
     qrImg.src =
-      "https://api.qrserver.com/v1/create-qr-code/?data=https://liff.line.me/2001467446-5e8NpLdt"
+      "https://api.qrserver.com/v1/create-qr-code/?data="
+      + encodeURIComponent(window.location.href)
       + "&size=240x240";
     modal.classList.add("show");
   }
@@ -155,24 +167,28 @@
   });
 
   (async function init(){
-    // 先給所有人一個可填的表單
-    setFormSrc();
-
-    // 非 LINE：顯示一次 QR 提示
-    if(!isLINE){
-      if(!sessionStorage.getItem("qr_dismissed")){
-        showQRModal();
+    if (isLINE) {
+      // ✅ LINE 內：先拿 userId，再「第一次」載入 iframe（避免雙載）
+      loadingBox.style.display = "block";
+      try{
+        await liff.init({ liffId: LIFF_ID });
+        const profile = await liff.getProfile();
+        const url = buildFormUrl({ userid: profile.userId });
+        mountIframe(url);
+      }catch(err){
+        console.error("LIFF error:", err);
+        // 取不到 userId 也要能填：退回一般表單
+        mountIframe(buildFormUrl());
       }
       return;
     }
 
-    // LINE App：初始化 LIFF，取得 userId，更新 iframe
-    try{
-      await liff.init({ liffId: LIFF_ID });
-      const profile = await liff.getProfile();
-      setFormSrc({ userid: profile.userId });
-    }catch(err){
-      console.error("LIFF error:", err);
+    // ✅ 非 LINE：直接載入一般表單（一次載入）
+    mountIframe(buildFormUrl());
+
+    // ✅ 非 LINE：彈一次 QR（可關閉，本次不再彈）
+    if(!sessionStorage.getItem("qr_dismissed")){
+      showQRModal();
     }
   })();
 </script>
