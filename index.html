@@ -115,57 +115,42 @@
     }
   </style>
 
-  <!-- Mobile Redirect Modal Style -->
   <style>
-    .mobile-modal {
+    .mobile-banner {
       display: none;
-      position: fixed;
-      inset: 0;
-      z-index: 10000;
-      background: #f8fafc;
-      padding: 24px;
-      flex-direction: column;
+      background: #ecfdf5;
+      border: 1px solid #06c755;
+      color: #064e3b;
+      padding: 12px;
+      border-radius: 12px;
+      margin-bottom: 16px;
+      text-align: center;
       align-items: center;
       justify-content: center;
-      text-align: center;
+      gap: 12px;
+      flex-wrap: wrap;
     }
 
-    .mobile-modal.show {
+    .mobile-banner.show {
       display: flex;
     }
 
-    .mobile-modal h2 {
-      margin: 0 0 12px;
-      font-size: 20px;
-      color: #1e293b;
+    .mobile-banner p {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.4;
     }
 
-    .mobile-modal p {
-      color: #64748b;
-      margin: 0 0 24px;
-      line-height: 1.6;
-    }
-
-    .btn-primary {
+    .btn-banner {
       background: #06c755;
       color: #fff;
       font-weight: bold;
-      padding: 14px 28px;
+      padding: 6px 16px;
       border-radius: 50px;
       text-decoration: none;
-      font-size: 16px;
-      box-shadow: 0 4px 12px rgba(6, 199, 85, 0.3);
+      font-size: 13px;
+      white-space: nowrap;
       border: none;
-      cursor: pointer;
-    }
-
-    .btn-secondary {
-      margin-top: 16px;
-      background: transparent;
-      color: #94a3b8;
-      font-size: 14px;
-      border: none;
-      text-decoration: underline;
       cursor: pointer;
     }
   </style>
@@ -180,6 +165,13 @@
     <div id="loadingBox" class="loading" style="display:none;">
       載入中…
     </div>
+
+    <!-- Mobile Banner -->
+    <div id="mobileRedirectBanner" class="mobile-banner">
+      <p>為了完整記錄會員資料，建議使用 LINE 開啟</p>
+      <a id="openLineBtn" href="#" class="btn-banner">用 LINE App 開啟</a>
+    </div>
+
     <iframe id="filloutFrame" title="Fillout 表單"></iframe>
   </div>
 
@@ -188,23 +180,11 @@
     <div class="modal-card">
       <h2>請用手機 LINE 掃碼開啟</h2>
       <img id="qrImage" alt="QR Code">
-          <button id="stayHereBtn" class="btn-secondary">沒有 LINE 帳號？點我繼續</button>
+      <button id="stayHereBtn" class="btn-secondary">沒有 LINE 帳號？點我繼續</button>
     </div>
   </div>
 
-  <!-- 手機版非 LINE 開啟提示/跳轉按鈕 -->
-  <div id="mobileRedirectModal" class="mobile-modal">
-    <div
-      style="width: 80px; height: 80px; background: #06c755; border-radius: 20px; display: grid; place-items: center; margin-bottom: 24px;">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="white">
-        <path
-          d="M21.6 11.2c0-4.6-4.3-8.4-9.6-8.4S2.4 6.6 2.4 11.2c0 4.1 3.6 7.6 8.4 8.2v0.1l-1.2 3.8c-0.1 0.4 0.2 0.7 0.5 0.7 0.2 0 0.3-0.1 0.4-0.1l4.9-3.4h0.1c3.5-0.6 6.1-4.1 6.1-8.3z" />
-      </svg>
-    </div>
-    <h2>若無自動跳轉，請按下方開啟</h2>
-    <a id="openLineBtn" href="#" class="btn-primary">用 LINE App 開啟</a>
-    <button id="stayHereBtn" class="btn-secondary">沒有 LINE 帳號？點我繼續</button>
-  </div>
+
 
   <script>
     /***** 你只需要改這兩個 *****/
@@ -225,9 +205,8 @@
     const qrImg = document.getElementById("qrImage");
     const closeDesktopBtn = document.getElementById("closeModal");
 
-    const mobileModal = document.getElementById("mobileRedirectModal");
+    const mobileBanner = document.getElementById("mobileRedirectBanner");
     const openLineBtn = document.getElementById("openLineBtn");
-    const stayHereBtn = document.getElementById("stayHereBtn");
 
     function buildFormUrl(params = {}) {
       const url = new URL(FILL_OUT_BASE_URL);
@@ -265,14 +244,8 @@
       // 設定按鈕連結
       const liffUrl = `https://liff.line.me/${LIFF_ID}`;
       openLineBtn.href = liffUrl;
-      mobileModal.classList.add("show");
+      mobileBanner.classList.add("show");
     }
-
-    stayHereBtn.addEventListener("click", () => {
-      mobileModal.classList.remove("show");
-      // 如果使用者執意要留下來，就載入一般表單
-      mountIframe(buildFormUrl());
-    });
 
     (async function init() {
       // 1. 如果是 LINE App 內：走標準 LIFF 流程
@@ -303,17 +276,14 @@
         if (!hasRedirected) {
           // 第一次：直接跳轉
           sessionStorage.setItem("liff_redirect_attempted", "1");
-          // 使用 replace 避免按上一頁鬼打牆
           window.location.replace(`https://liff.line.me/${LIFF_ID}`);
           return;
         } else {
-          // 已經跳轉過如果還在這裡，代表：
-          // (a) 使用者按了取消/返回
-          // (b) 瀏覽器擋掉跳轉
-          // -> 顯示引導按鈕，不要無限迴圈
+          // 已經跳轉過 (Loop Prevention)：
+          // 1. 顯示頂部 Banner 建議開啟 LINE
           showMobileRedirect();
-          // 背景還是可以先不用載入 iframe，等使用者按「留下來」再載入，或著直接載入也行
-          // 這裡選擇不載入，讓畫面乾淨，專注在引導
+          // 2. 並且直接載入表單，不讓畫面留白
+          mountIframe(buildFormUrl());
           return;
         }
       }
@@ -325,7 +295,7 @@
         showQRModal();
       }
     })();
-    // Updated at: 2026-01-13T13:55:02+08:00
+    // Updated at: 2026-01-13T14:26:00+08:00
   </script>
 
 </body>
