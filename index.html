@@ -230,7 +230,8 @@
       // 產生目前網址的 QR Code
       const currentUrl = encodeURIComponent(window.location.href);
       if (qrImg) {
-        qrImg.src = "https://api.qrserver.com/v1/create-qr-code/?data=" + currentUrl + "&size=240x240";
+        qrImg.src = "https://api.qrserver.com/v1/create-qr-code/?data=https%3A%2F%2Fcico.pse.is%2F260107_
+&size=240x240";
       }
       if (desktopModal) {
         desktopModal.classList.add("show");
