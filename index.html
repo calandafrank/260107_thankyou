@@ -227,8 +227,7 @@
 
     // 顯示桌面版 QR Code
     function showQRModal() {
-      // 產生目前網址的 QR Code
-      const currentUrl = encodeURIComponent(window.location.href);
+      // 改用固定網址的 QR Code (User Request)
       if (qrImg) {
         qrImg.src = "https://api.qrserver.com/v1/create-qr-code/?data=https%3A%2F%2Fcico.pse.is%2F260107_&size=240x240";
       }
